@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { assessmentData } from "@/lib/assessment-data"
+import { assessmentData } from "@/lib/assessment/assessment-data"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChevronRight, Check } from "lucide-react"
 import { useRouter } from "next/navigation"
