@@ -4,7 +4,6 @@ import { Home, ClipboardList, History, Settings, LogOut } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 
 const navigation = [
@@ -19,9 +18,11 @@ export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
 
-  const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+  const handleLogout = () => {
+    // Limpiar localStorage
+    localStorage.removeItem('usuario')
+    
+    // Redirigir a login
     router.push("/login")
   }
 

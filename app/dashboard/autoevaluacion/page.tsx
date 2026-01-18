@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -10,6 +9,7 @@ import { assessmentData } from "@/lib/assessment/assessment-data"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChevronRight, Check } from "lucide-react"
 import { useRouter } from "next/navigation"
+
 
 type Chapter = (typeof assessmentData.chapters)[0]
 type Indicator = Chapter["indicators"][0]
@@ -27,61 +27,29 @@ export default function AutoevaluacionPage() {
   const [isFinalizng, setIsFinalizing] = useState(false)
 
   useEffect(() => {
-    async function init() {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) {
-        router.push("/login")
-        return
-      }
-
-      setUserId(user.id)
-
-      // Get or create assessment
-      const { data: assessments } = await supabase
-        .from("assessments")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("is_completed", false)
-        .order("created_at", { ascending: false })
-        .limit(1)
-
-      let assessment = assessments?.[0]
-
-      if (!assessment) {
-        const { data: newAssessment } = await supabase
-          .from("assessments")
-          .insert({ user_id: user.id })
-          .select()
-          .single()
-        assessment = newAssessment
-      }
-
-      if (assessment) {
-        setAssessmentId(assessment.id)
-
-        // Load existing responses
-        const { data: existingResponses } = await supabase
-          .from("assessment_responses")
-          .select("*")
-          .eq("assessment_id", assessment.id)
-
-        const responsesMap: Record<string, number> = {}
-        existingResponses?.forEach((r) => {
-          responsesMap[`${r.chapter_number}-${r.indicator_number}`] = r.selected_level
-        })
-        setResponses(responsesMap)
-      }
-
-      // Set first chapter and indicator
+  // Obtener usuario de localStorage
+  const usuarioStr = localStorage.getItem('usuario')
+  
+  if (!usuarioStr) {
+    router.push("/login")
+    return
+  }
+  
+  try {
+    const usuario = JSON.parse(usuarioStr)
+    setUserId(usuario.idUsuario.toString())
+    
+    // Inicializar primer capítulo
+    if (assessmentData.chapters.length > 0) {
       setCurrentChapter(assessmentData.chapters[0])
-      setCurrentIndicator(assessmentData.chapters[0].indicators[0])
+      if (assessmentData.chapters[0].indicators.length > 0) {
+        setCurrentIndicator(assessmentData.chapters[0].indicators[0])
+      }
     }
-
-    init()
+    } catch (error) {
+      console.error('Error al obtener usuario:', error)
+      router.push("/login")
+    }
   }, [router])
 
   useEffect(() => {
@@ -98,95 +66,41 @@ export default function AutoevaluacionPage() {
   }
 
   const handleSaveResponse = async () => {
-    if (!userId || !assessmentId || !currentChapter || !currentIndicator || selectedLevel === null) return
-
-    setIsSaving(true)
-    const supabase = createClient()
-
-    try {
-      const { error } = await supabase.from("assessment_responses").upsert(
-        {
-          assessment_id: assessmentId,
-          user_id: userId,
-          chapter_number: currentChapter.number,
-          indicator_number: currentIndicator.number,
-          indicator_name: currentIndicator.name,
-          selected_level: selectedLevel,
-        },
-        {
-          onConflict: "assessment_id,chapter_number,indicator_number",
-        },
-      )
-
-      if (error) throw error
-
-      const key = `${currentChapter.number}-${currentIndicator.number}`
-      setResponses((prev) => ({ ...prev, [key]: selectedLevel }))
-
-      // Move to next indicator
-      const allIndicators: Array<{ chapter: Chapter; indicator: Indicator }> = []
-      assessmentData.chapters.forEach((chapter) => {
-        chapter.indicators.forEach((indicator) => {
-          allIndicators.push({ chapter, indicator })
-        })
-      })
-
-      const currentIndex = allIndicators.findIndex(
-        (item) => item.chapter.number === currentChapter.number && item.indicator.number === currentIndicator.number,
-      )
-
-      if (currentIndex < allIndicators.length - 1) {
-        const next = allIndicators[currentIndex + 1]
-        handleSelectIndicator(next.chapter, next.indicator)
+      if (!currentChapter || !currentIndicator || selectedLevel === null) {
+        return
       }
-    } catch (error) {
-      console.error("[v0] Error saving response:", error)
-    } finally {
+
+      setIsSaving(true)
+    
+      // TODO: Conectar con backend Go para guardar respuestas
+      console.log('Guardando respuesta:', {
+        userId,
+        indicator: currentIndicator,
+        level: selectedLevel
+      })
+      
+      // Guardar respuesta localmente por ahora
+      const key = `${currentChapter.number}-${currentIndicator.number}`
+      setResponses(prev => ({
+        ...prev,
+        [key]: selectedLevel
+      }))
+      
       setIsSaving(false)
     }
+
+    const handleFinalizeAssessment = async () => {
+      setIsFinalizing(true)
+    
+    // TODO: Enviar evaluación completa al backend
+    console.log('Finalizando evaluación:', responses)
+    
+    alert('Evaluación guardada localmente. Próximamente se guardará en el servidor.')
+    
+    setIsFinalizing(false)
+    router.push('/dashboard')
   }
 
-  const handleFinalizeAssessment = async () => {
-    if (!assessmentId) return
-
-    setIsFinalizing(true)
-    const supabase = createClient()
-
-    try {
-      // Calculate total score
-      const totalScore = Object.values(responses).reduce((acc, level) => acc + level, 0)
-
-      let sustainabilityLevel = "Nivel mínimo de Sostenibilidad"
-      if (totalScore >= 113 && totalScore <= 126) {
-        sustainabilityLevel = "Nivel alto de Sostenibilidad"
-      } else if (totalScore >= 94 && totalScore <= 112) {
-        sustainabilityLevel = "Nivel medio de Sostenibilidad"
-      }
-
-      const { error } = await supabase
-        .from("assessments")
-        .update({
-          is_completed: true,
-          total_score: totalScore,
-          sustainability_level: sustainabilityLevel,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", assessmentId)
-
-      if (error) {
-        console.error("[v0] Error finalizing assessment:", error)
-        throw error
-      }
-
-      // Redirect to dashboard to see results
-      router.push("/dashboard")
-    } catch (error) {
-      console.error("[v0] Error finalizing assessment:", error)
-      alert("Error al finalizar la autoevaluación. Por favor, intente nuevamente.")
-    } finally {
-      setIsFinalizing(false)
-    }
-  }
 
   if (!currentChapter || !currentIndicator) {
     return <div className="p-8">Cargando...</div>

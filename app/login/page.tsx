@@ -2,7 +2,6 @@
 
 import type React from "react"
 
-import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,6 +10,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Eye, EyeOff } from "lucide-react"
+import { loginUsuario } from "@/lib/api/auth"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -22,19 +22,31 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      console.log('Iniciando login con:', { email: email.trim() })
+
+      const usuario = await loginUsuario({
+        email: email.trim(),
+        password: password.trim(),
       })
-      if (error) throw error
+
+      console.log('Login exitoso, usuario recibido:', usuario)
+
+      // Guardar datos del usuario en localStorage (ya se hace en loginUsuario, pero por si acaso)
+      localStorage.setItem('usuario', JSON.stringify(usuario))
+
+      console.log('Usuario guardado en localStorage')
+      console.log('Verificando localStorage:', localStorage.getItem('usuario'))
+
+      // Redirigir al dashboard
+      console.log('Redirigiendo a /dashboard')
       router.push("/dashboard")
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Ocurrió un error")
+      console.error('Error en login:', error)
+      setError(error instanceof Error ? error.message : "Ocurrió un error al iniciar sesión")
     } finally {
       setIsLoading(false)
     }

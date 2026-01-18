@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { solicitarRestablecimientoPassword } from "@/lib/api/auth"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -22,18 +22,11 @@ export default function RecuperarContrasenaPage() {
     setError(null)
     setMessage(null)
 
-    const supabase = createClient()
-
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/actualizar-contrasena`,
-      })
-
-      if (error) throw error
-
+      await solicitarRestablecimientoPassword(email)
       setMessage("Se ha enviado un correo con instrucciones para recuperar tu contraseña")
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Ocurrió un error")
+      setError(err instanceof Error ? err.message : "Ocurrió un error al solicitar el restablecimiento")
     } finally {
       setIsLoading(false)
     }
