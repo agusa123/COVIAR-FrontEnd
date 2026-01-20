@@ -45,12 +45,36 @@ export interface LoginResponse {
   token?: string // Para cuando la API implemente JWT
 }
 
-export interface RegistroRequest {
-  email: string
+// Estructura para el registro de bodega según API /api/v1/registro
+export interface RegistroBodega {
+  razon_social: string
+  nombre_fantasia: string
+  cuit: string
+  inv_bod?: string
+  inv_vin?: string
+  calle: string
+  numeracion?: string
+  id_localidad: number
+  telefono: string
+  email_institucional: string
+}
+
+export interface RegistroCuenta {
+  email_login: string
   password: string
+}
+
+export interface RegistroResponsable {
   nombre: string
   apellido: string
-  rol: string
+  cargo: string
+  dni?: string
+}
+
+export interface RegistroRequest {
+  bodega: RegistroBodega
+  cuenta: RegistroCuenta
+  responsable: RegistroResponsable
 }
 
 export interface RegistroResponse {

@@ -14,31 +14,35 @@ import type {
  */
 
 /**
- * Registra un nuevo usuario en el sistema
+ * Registra una nueva bodega en el sistema
+ * Usa el proxy de Next.js para evitar problemas de CORS
+ * POST /api/registro -> proxy -> http://localhost:8080/api/v1/registro
  */
-export async function registrarUsuario(data: RegistroRequest): Promise<Usuario> {
-  const response = await api.post<Usuario | RegistroResponse>('/api/usuarios', data)
+export async function registrarBodega(data: RegistroRequest): Promise<RegistroResponse> {
+  try {
+    // Usar el proxy de Next.js para evitar CORS
+    const response = await fetch('/api/registro', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
 
-  let usuario: Usuario
+    const result = await response.json()
 
-  // Verificar si la respuesta tiene el formato { usuario, token } o es directamente el Usuario
-  if ('usuario' in response) {
-    // Formato: { usuario: Usuario, token?: string }
-    usuario = response.usuario
-    if (response.token) {
-      localStorage.setItem('token', response.token)
+    if (!response.ok) {
+      throw new Error(result.message || `Error ${response.status}: ${response.statusText}`)
     }
-  } else {
-    // Formato directo: Usuario
-    usuario = response as Usuario
+
+    console.log('Bodega registrada:', result)
+    return result
+  } catch (error) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      throw new Error('No se pudo conectar con el servidor')
+    }
+    throw error
   }
-
-  console.log('Usuario registrado:', usuario)
-
-  // Guardar usuario en localStorage
-  localStorage.setItem('usuario', JSON.stringify(usuario))
-
-  return usuario
 }
 
 /**
