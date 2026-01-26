@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+import { CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 
 export default function LogoutPage() {
     const router = useRouter()
     const [countdown, setCountdown] = useState(5)
 
     useEffect(() => {
-        // Countdown para redirección automática
+        // Contador regresivo
         const timer = setInterval(() => {
             setCountdown((prev) => {
                 if (prev <= 1) {
@@ -31,13 +31,13 @@ export default function LogoutPage() {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted/30 p-4">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/30 p-4">
             <Card className="w-full max-w-md shadow-lg">
                 <CardContent className="pt-8 pb-8 text-center space-y-6">
-                    {/* Icono de confirmación */}
+                    {/* Icono de éxito */}
                     <div className="flex justify-center">
                         <div className="rounded-full bg-green-100 p-4">
-                            <CheckCircle className="h-12 w-12 text-green-600" />
+                            <CheckCircle2 className="h-12 w-12 text-green-600" />
                         </div>
                     </div>
 
@@ -53,18 +53,17 @@ export default function LogoutPage() {
 
                     {/* Mensaje de agradecimiento */}
                     <p className="text-sm text-muted-foreground px-4">
-                        Gracias por usar la plataforma <span className="font-semibold text-primary">COVIAR</span>.
-                        Tu sesión ha sido cerrada de forma segura.
+                        Gracias por usar la plataforma COVIAR. Tu sesión ha sido cerrada de forma segura.
                     </p>
 
-                    {/* Botón de acción */}
+                    {/* Botón y contador */}
                     <div className="space-y-3">
                         <Button
                             onClick={handleGoToLogin}
                             className="w-full"
                             size="lg"
                         >
-                            Volver al inicio
+                            Volver al inicio de sesión
                         </Button>
                         <p className="text-xs text-muted-foreground">
                             Serás redirigido automáticamente en {countdown} segundos...
