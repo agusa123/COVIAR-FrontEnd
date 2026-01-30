@@ -144,9 +144,21 @@ export async function guardarRespuesta(
     idIndicador: number,
     idNivelRespuesta: number
 ): Promise<void> {
-    return guardarRespuestas(idAutoevaluacion, [
-        { id_indicador: idIndicador, id_nivel_respuesta: idNivelRespuesta }
-    ])
+    const response = await fetch(`/api/autoevaluaciones/${idAutoevaluacion}/respuestas`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({
+            id_indicador: idIndicador,
+            id_nivel_respuesta: idNivelRespuesta
+        }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+        throw new Error(data.message || `Error ${response.status}: ${response.statusText}`)
+    }
 }
 
 /**

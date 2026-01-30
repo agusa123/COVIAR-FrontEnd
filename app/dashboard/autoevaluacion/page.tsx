@@ -29,11 +29,8 @@ export default function AutoevaluacionPage() {
 
   // Estado para navegación
   const [currentCapitulo, setCurrentCapitulo] = useState<CapituloEstructura | null>(null)
-  const [currentIndicador, setCurrentIndicador] = useState<IndicadorEstructura | null>(null)
-  const [selectedLevel, setSelectedLevel] = useState<number | null>(null)
-  const [selectedNivelRespuestaId, setSelectedNivelRespuestaId] = useState<number | null>(null)
   const [responses, setResponses] = useState<Record<string, number>>({})
-  const [isSaving, setIsSaving] = useState(false)
+  // const [isSaving, setIsSaving] = useState(false)
   const [canFinalize, setCanFinalize] = useState(false)
   const [isFinalizing, setIsFinalizing] = useState(false)
 
@@ -106,79 +103,43 @@ export default function AutoevaluacionPage() {
     setCanFinalize(completedIndicators === totalIndicadoresHabilitados && totalIndicadoresHabilitados > 0)
   }, [responses, estructura])
 
-  const handleSelectIndicator = (capitulo: CapituloEstructura, indicador: IndicadorEstructura) => {
-    // Solo permitir selección de indicadores habilitados
-    if (!indicador.habilitado) return
+  // Manejar cambio de respuesta individual
+  const handleResponseChange = async (indicador: IndicadorEstructura, newLevel: number, newNivelId: number) => {
+    if (!assessmentId || !currentCapitulo) return
 
-    setCurrentCapitulo(capitulo)
-    setCurrentIndicador(indicador)
-    const key = `${capitulo.capitulo.id_capitulo}-${indicador.indicador.id_indicador}`
-    setSelectedLevel(responses[key] ?? null)
-    setSelectedNivelRespuestaId(null)
-  }
-
-  const handleSaveResponse = async () => {
-    if (!currentCapitulo || !currentIndicador || selectedLevel === null || selectedNivelRespuestaId === null || !currentIndicador.habilitado || !assessmentId) {
-      return
-    }
-
-    setIsSaving(true)
+    // Optimistic update
+    const key = `${currentCapitulo.capitulo.id_capitulo}-${indicador.indicador.id_indicador}`
+    setResponses(prev => ({
+      ...prev,
+      [key]: newLevel
+    }))
 
     try {
-      // Guardar respuesta en el backend
-      await guardarRespuesta(
-        assessmentId,
-        currentIndicador.indicador.id_indicador,
-        selectedNivelRespuestaId
-      )
-
-      // Guardar respuesta localmente para UI
-      const key = `${currentCapitulo.capitulo.id_capitulo}-${currentIndicador.indicador.id_indicador}`
-      setResponses(prev => ({
-        ...prev,
-        [key]: selectedLevel
-      }))
-
-      // Avanzar al siguiente indicador habilitado
-      avanzarAlSiguienteIndicador()
+      await guardarRespuesta(assessmentId, indicador.indicador.id_indicador, newNivelId)
     } catch (error) {
       console.error('Error al guardar respuesta:', error)
-      alert(error instanceof Error ? error.message : 'Error al guardar la respuesta')
-    } finally {
-      setIsSaving(false)
+      // Revertir optimistic update si falla (opcional, o mostrar error toast)
     }
   }
 
-  const avanzarAlSiguienteIndicador = () => {
-    if (!currentCapitulo || !currentIndicador) return
+  // Navegación de Capítulos
+  const cambiarCapitulo = (direction: 'next' | 'prev') => {
+    if (!currentCapitulo) return
+    const currentIndex = estructura.findIndex(c => c.capitulo.id_capitulo === currentCapitulo.capitulo.id_capitulo)
+    if (currentIndex === -1) return
 
-    // Buscar el siguiente indicador habilitado
-    const currentCapIndex = estructura.findIndex(c => c.capitulo.id_capitulo === currentCapitulo.capitulo.id_capitulo)
-    const currentIndIndex = currentCapitulo.indicadores.findIndex(i => i.indicador.id_indicador === currentIndicador.indicador.id_indicador)
-
-    // Buscar en los indicadores restantes del capítulo actual
-    for (let i = currentIndIndex + 1; i < currentCapitulo.indicadores.length; i++) {
-      if (currentCapitulo.indicadores[i].habilitado) {
-        setCurrentIndicador(currentCapitulo.indicadores[i])
-        setSelectedLevel(null)
-        setSelectedNivelRespuestaId(null)
-        return
-      }
-    }
-
-    // Buscar en los capítulos siguientes
-    for (let c = currentCapIndex + 1; c < estructura.length; c++) {
-      for (const ind of estructura[c].indicadores) {
-        if (ind.habilitado) {
-          setCurrentCapitulo(estructura[c])
-          setCurrentIndicador(ind)
-          setSelectedLevel(null)
-          setSelectedNivelRespuestaId(null)
-          return
-        }
-      }
+    if (direction === 'next' && currentIndex < estructura.length - 1) {
+      setCurrentCapitulo(estructura[currentIndex + 1])
+      window.scrollTo(0, 0)
+    } else if (direction === 'prev' && currentIndex > 0) {
+      setCurrentCapitulo(estructura[currentIndex - 1])
+      window.scrollTo(0, 0)
     }
   }
+
+
+
+
 
   const handleFinalizeAssessment = async () => {
     if (!assessmentId) return
@@ -236,8 +197,6 @@ export default function AutoevaluacionPage() {
       if (response.capitulos.length > 0) {
         const primerCapitulo = response.capitulos[0]
         setCurrentCapitulo(primerCapitulo)
-        const primerIndicador = primerCapitulo.indicadores.find(ind => ind.habilitado) || primerCapitulo.indicadores[0]
-        setCurrentIndicador(primerIndicador)
       }
 
       setIsSelectingSegment(false)
@@ -284,7 +243,7 @@ export default function AutoevaluacionPage() {
   }
 
   // Bypass de chequeo de datos si estamos seleccionando segmento
-  if (!isSelectingSegment && (!currentCapitulo || !currentIndicador)) {
+  if (!isSelectingSegment && !currentCapitulo) {
     return <div className="p-8">No hay datos disponibles</div>
   }
 
@@ -292,73 +251,11 @@ export default function AutoevaluacionPage() {
     return `${capituloId}-${indicadorId}` in responses
   }
 
-  // Verificar si es el último indicador habilitado
-  const ultimoCapitulo = estructura[estructura.length - 1]
-  const ultimosIndicadoresHabilitados = ultimoCapitulo?.indicadores.filter(ind => ind.habilitado) || []
-  const ultimoIndicadorHabilitado = ultimosIndicadoresHabilitados[ultimosIndicadoresHabilitados.length - 1]
-  const isLastIndicator =
-    currentCapitulo?.capitulo.id_capitulo === ultimoCapitulo?.capitulo.id_capitulo &&
-    currentIndicador?.indicador.id_indicador === ultimoIndicadorHabilitado?.indicador.id_indicador
+
 
   return (
     <div className="flex h-full">
-      {/* Left sidebar with chapters and indicators */}
-      <div className="w-80 border-r bg-card">
-        <div className="p-4 border-b bg-primary flex justify-between items-center">
-          <h2 className="font-semibold text-primary-foreground">Autoevaluación</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleOpenSegmentSelector}
-            className="text-primary-foreground hover:bg-primary-foreground/20"
-            title="Cambiar Segmento"
-          >
-            <Settings className="h-5 w-5" />
-          </Button>
-        </div>
-        <ScrollArea className="h-[calc(100vh-8rem)]">
-          <div className="p-4 space-y-4">
-            {estructura.map((capitulo) => (
-              <div key={capitulo.capitulo.id_capitulo} className="space-y-2">
-                <h3 className="font-semibold text-sm">{capitulo.capitulo.nombre}</h3>
-                <div className="space-y-1">
-                  {capitulo.indicadores.map((indicadorWrapper) => {
-                    const isActive =
-                      currentCapitulo?.capitulo.id_capitulo === capitulo.capitulo.id_capitulo &&
-                      currentIndicador?.indicador.id_indicador === indicadorWrapper.indicador.id_indicador
-                    const isSaved = isResponseSaved(capitulo.capitulo.id_capitulo, indicadorWrapper.indicador.id_indicador)
-                    const isDisabled = !indicadorWrapper.habilitado
 
-                    return (
-                      <button
-                        key={indicadorWrapper.indicador.id_indicador}
-                        onClick={() => handleSelectIndicator(capitulo, indicadorWrapper)}
-                        disabled={isDisabled}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between transition-colors ${isDisabled
-                          ? "opacity-50 cursor-not-allowed bg-muted/20 text-muted-foreground"
-                          : isActive
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                          }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          {isDisabled ? (
-                            <Ban className="w-4 h-4 text-muted-foreground" />
-                          ) : isSaved ? (
-                            <Check className="w-4 h-4 text-primary" />
-                          ) : null}
-                          {indicadorWrapper.indicador.nombre}
-                        </span>
-                        {!isDisabled && <ChevronRight className="w-4 h-4" />}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
 
       {/* Right content area */}
       <div className="flex-1 p-8 space-y-6">
@@ -366,11 +263,22 @@ export default function AutoevaluacionPage() {
         {!isSelectingSegment && estructura.length > 0 && (
           <div className="bg-zinc-900 text-white p-4 rounded-lg shadow-md flex items-center justify-between gap-6">
             <div className="flex gap-8">
-              <div>
-                <div className="text-xs text-zinc-400 uppercase font-semibold">Categoría</div>
-                <div className="font-bold text-lg leading-tight">
-                  {selectedSegment?.nombre.split(' ')[0] || "General"}
+              <div className="flex items-center gap-3">
+                <div>
+                  <div className="text-xs text-zinc-400 uppercase font-semibold">Categoría</div>
+                  <div className="font-bold text-lg leading-tight">
+                    {selectedSegment?.nombre.split(' ')[0] || "General"}
+                  </div>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleOpenSegmentSelector}
+                  className="text-zinc-400 hover:text-white hover:bg-white/10 h-8 w-8"
+                  title="Cambiar Segmento"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
               </div>
 
               <div className="border-l border-zinc-700 pl-6">
@@ -412,33 +320,113 @@ export default function AutoevaluacionPage() {
           </div>
         )}
 
-        <Card>
-          <CardHeader>
-            {isSelectingSegment ? (
+        {/* Lista de Indicadores del Capítulo Actual */}
+        {!isSelectingSegment && currentCapitulo && (
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold text-primary mb-2">{currentCapitulo.capitulo.nombre}</h2>
+              {currentCapitulo.capitulo.descripcion && (
+                <p className="text-muted-foreground">{currentCapitulo.capitulo.descripcion}</p>
+              )}
+            </div>
+
+            {currentCapitulo.indicadores.filter(i => i.habilitado).map((indicadorWrapper, index) => {
+              const key = `${currentCapitulo.capitulo.id_capitulo}-${indicadorWrapper.indicador.id_indicador}`
+              const savedValue = responses[key] // Returns points
+              // Find saved nivel ID not directly possible from responses map which stores points only,
+              // but we need points for UI selected state. 
+              // Wait, handleResponseChange updates points in 'responses'.
+
+              return (
+                <Card key={indicadorWrapper.indicador.id_indicador} className="border-l-4 border-l-primary/20">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-start gap-2">
+                      <span className="bg-primary/10 text-primary text-sm font-bold px-2 py-1 rounded">
+                        {index + 1}
+                      </span>
+                      {indicadorWrapper.indicador.nombre}
+                    </CardTitle>
+                    <CardDescription className="text-balance mt-2">
+                      {indicadorWrapper.indicador.descripcion}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <RadioGroup
+                      value={savedValue?.toString()}
+                      onValueChange={(v) => {
+                        const nivel = indicadorWrapper.niveles_respuesta.find(n => n.puntos.toString() === v)
+                        if (nivel) {
+                          handleResponseChange(indicadorWrapper, nivel.puntos, nivel.id_nivel_respuesta)
+                        }
+                      }}
+                      className="space-y-3"
+                    >
+                      {indicadorWrapper.niveles_respuesta.map((nivel) => (
+                        <div
+                          key={nivel.id_nivel_respuesta}
+                          className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${savedValue === nivel.puntos
+                            ? "bg-primary/5 border-primary"
+                            : "hover:bg-muted/50"
+                            }`}
+                        >
+                          <RadioGroupItem value={nivel.puntos.toString()} id={`ind-${indicadorWrapper.indicador.id_indicador}-lvl-${nivel.id_nivel_respuesta}`} className="mt-1" />
+                          <Label htmlFor={`ind-${indicadorWrapper.indicador.id_indicador}-lvl-${nivel.id_nivel_respuesta}`} className="font-normal cursor-pointer w-full">
+                            <div className="font-medium text-foreground">{nivel.nombre}</div>
+                            {nivel.descripcion && (
+                              <div className="text-sm text-muted-foreground mt-1 text-pretty">{nivel.descripcion}</div>
+                            )}
+                          </Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </CardContent>
+                </Card>
+              )
+            })}
+
+            {/* Navegación entre Capítulos */}
+            <div className="flex justify-between items-center pt-8 border-t">
+              <Button
+                variant="outline"
+                onClick={() => cambiarCapitulo('prev')}
+                disabled={estructura.findIndex(c => c.capitulo.id_capitulo === currentCapitulo.capitulo.id_capitulo) === 0}
+              >
+                Anterior Capítulo
+              </Button>
+
+              {estructura.findIndex(c => c.capitulo.id_capitulo === currentCapitulo.capitulo.id_capitulo) === estructura.length - 1 ? (
+                <Button
+                  onClick={handleFinalizeAssessment}
+                  disabled={!canFinalize || isFinalizing}
+                  className="bg-[#81242d] hover:bg-[#6D1A1A]"
+                >
+                  {isFinalizing ? "Finalizando..." : "Finalizar Autoevaluación"}
+                </Button>
+              ) : (
+                <Button onClick={() => cambiarCapitulo('next')}>
+                  Siguiente Capítulo
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Placeholder para cuando se selecciona segmento y no hay card */}
+        {isSelectingSegment && (
+          <Card>
+            <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-6 w-6" />
                 Seleccionar Segmento de Enoturismo
               </CardTitle>
-            ) : (
-              <>
-                <CardTitle className="text-balance">
-                  {currentCapitulo?.capitulo.nombre} - {currentIndicador?.indicador.nombre}
-                </CardTitle>
-                <CardDescription className="text-balance">
-                  {currentIndicador?.indicador.descripcion}
-                </CardDescription>
-              </>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {isSelectingSegment ? (
-              loadingSegmentos ? (
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {loadingSegmentos ? (
                 <div className="text-center p-8">Cargando segmentos...</div>
               ) : (
                 <div className="grid gap-4">
                   <div className="bg-blue-50 p-4 rounded-md text-blue-800 text-sm mb-4">
                     Seleccione el segmento que mejor describa su bodega según la cantidad de turistas que recibe anualmente.
-                    Esto adaptará los indicadores de la autoevaluación a su realidad.
                   </div>
                   {segmentos.map((seg) => (
                     <Card
@@ -464,80 +452,10 @@ export default function AutoevaluacionPage() {
                     </Button>
                   )}
                 </div>
-              )
-            ) : !currentIndicador?.habilitado ? (
-              <div className="p-6 bg-muted/30 rounded-lg border border-dashed text-center">
-                <Ban className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-muted-foreground font-medium">Indicador no aplicable</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Este indicador no es pertinente para tu segmento.
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-4">
-                  <RadioGroup
-                    value={selectedLevel?.toString()}
-                    onValueChange={(v) => {
-                      const nivel = currentIndicador?.niveles_respuesta.find(n => n.puntos.toString() === v)
-                      if (nivel) {
-                        setSelectedLevel(nivel.puntos)
-                        setSelectedNivelRespuestaId(nivel.id_nivel_respuesta)
-                      }
-                    }}
-                    className="space-y-4"
-                  >
-                    {currentIndicador?.niveles_respuesta.map((nivel) => (
-                      <div
-                        key={nivel.id_nivel_respuesta}
-                        onClick={() => {
-                          setSelectedLevel(nivel.puntos)
-                          setSelectedNivelRespuestaId(nivel.id_nivel_respuesta)
-                        }}
-                        className={`p-4 border rounded-lg transition-colors cursor-pointer ${selectedLevel === nivel.puntos
-                          ? "bg-primary/10 border-primary ring-2 ring-primary"
-                          : "bg-muted/30 hover:bg-muted/50 hover:border-primary/50"
-                          }`}
-                      >
-                        <RadioGroupItem
-                          value={nivel.puntos.toString()}
-                          id={`nivel-${nivel.id_nivel_respuesta}`}
-                          className="sr-only"
-                        />
-                        <Label htmlFor={`nivel-${nivel.id_nivel_respuesta}`} className="cursor-pointer block">
-                          <div className="font-semibold mb-2">{nivel.nombre}</div>
-                          {nivel.descripcion && (
-                            <div className="text-sm text-muted-foreground text-pretty">{nivel.descripcion}</div>
-                          )}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
-                </div>
-
-                <Button
-                  onClick={handleSaveResponse}
-                  disabled={selectedLevel === null || isSaving}
-                  className="w-full"
-                >
-                  {isSaving ? "Guardando..." : "Guardar y Continuar"}
-                </Button>
-
-                {isLastIndicator && canFinalize && (
-                  <Button
-                    onClick={handleFinalizeAssessment}
-                    disabled={isFinalizing}
-                    variant="default"
-                    size="lg"
-                    className="w-full bg-[#81242d] hover:bg-[#6D1A1A]"
-                  >
-                    {isFinalizing ? "Finalizando..." : "Finalizar Autoevaluación"}
-                  </Button>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div >
   )
