@@ -10,8 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TrendingUp, TrendingDown, Minus, BarChart3, Target, Award, History, Plus, ClipboardList } from "lucide-react"
 import { obtenerHistorialAutoevaluaciones, obtenerResultadosAutoevaluacion } from "@/lib/api/autoevaluacion"
 import type { AutoevaluacionHistorial, ResultadoDetallado } from "@/lib/api/types"
-import { determineSustainabilityLevel, calculateComparison } from "@/lib/utils/scoring"
-import { DotPlotChart } from "@/components/charts/dot-plot-chart"
+import { determineSustainabilityLevel, calculateComparison, determineLevelByScoreAndSegment } from "@/lib/utils/scoring"
+import { getLatestResultFromLocal, getLocalHistory } from "@/lib/utils/storage-utils"
+import { ChapterBarChart } from "@/components/charts/chapter-bar-chart"
 import { ProgressBarChart } from "@/components/charts/progress-bar-chart"
 import { TrendLineChart } from "@/components/charts/trend-line-chart"
 import { ChapterProgressCard } from "@/components/results/chapter-progress-card"
@@ -30,21 +31,19 @@ export default function ResultadosPage() {
                 // ==========================================
                 // 1. INTENTAR CARGAR DE LOCALSTORAGE (PRIORIDAD)
                 // ==========================================
-                const historialLocalStr = localStorage.getItem('historial_local')
-                if (historialLocalStr) {
-                    try {
-                        const historialLocal: ResultadoDetallado[] = JSON.parse(historialLocalStr)
-                        if (historialLocal.length > 0) {
-                            // Local storage tiene datos recientes
-                            const latest = historialLocal[0]
-                            setUltimaEvaluacion(latest)
-                            setHistorial(historialLocal.map(h => h.autoevaluacion))
-                            setIsLoading(false)
-                            return
-                        }
-                    } catch (e) {
-                        console.error('Error al parsear historial local:', e)
-                    }
+                // ==========================================
+                // 1. INTENTAR CARGAR DE LOCALSTORAGE (PRIORIDAD)
+                // ==========================================
+                const latestLocal = getLatestResultFromLocal()
+                if (latestLocal) {
+                    setUltimaEvaluacion(latestLocal)
+
+                    // Cargar historial completo también
+                    const historyFull = getLocalHistory()
+                    setHistorial(historyFull.map(h => h.autoevaluacion))
+
+                    setIsLoading(false)
+                    return
                 }
 
                 // ==========================================
@@ -167,8 +166,9 @@ export default function ResultadosPage() {
     }
 
     const ultima = ultimaEvaluacion.autoevaluacion
-    const nivel = ultima?.porcentaje !== null && ultima?.porcentaje !== undefined
-        ? determineSustainabilityLevel(ultima.porcentaje)
+    // Usar la nueva lógica basada en puntaje y segmento
+    const nivel = ultima?.puntaje_final !== null && ultima?.puntaje_final !== undefined
+        ? determineLevelByScoreAndSegment(ultima.puntaje_final, ultima.nombre_segmento)
         : null
 
     // Calcular comparación si hay más de una evaluación
@@ -281,7 +281,7 @@ export default function ResultadosPage() {
             {/* Gráficos */}
             <Tabs defaultValue="radar" className="space-y-6">
                 <TabsList>
-                    <TabsTrigger value="radar">Vista de Puntos</TabsTrigger>
+                    <TabsTrigger value="radar">Gráfico Vertical</TabsTrigger>
                     <TabsTrigger value="barras">Vista Barras</TabsTrigger>
                     <TabsTrigger value="tendencia">Tendencia Histórica</TabsTrigger>
                 </TabsList>
@@ -294,7 +294,7 @@ export default function ResultadosPage() {
                         </CardHeader>
                         <CardContent>
                             {ultimaEvaluacion.capitulos && (
-                                <DotPlotChart data={ultimaEvaluacion.capitulos} />
+                                <ChapterBarChart data={ultimaEvaluacion.capitulos} />
                             )}
                         </CardContent>
                     </Card>

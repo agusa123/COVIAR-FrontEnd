@@ -145,6 +145,7 @@ export interface AutoevaluacionHistorial {
   estado: 'pendiente' | 'completada' | 'cancelada'
   id_bodega: number
   id_segmento: number | null
+  nombre_segmento?: string // Agregado para persistencia local del nombre
   puntaje_final: number | null
   puntaje_maximo: number | null
   porcentaje: number | null

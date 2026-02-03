@@ -21,6 +21,12 @@ export const NIVELES_SOSTENIBILIDAD = [
     { min: 90, max: 100, nombre: 'Ejemplar', color: '#10b981', descripcion: 'Referente en sostenibilidad enoturística' },
 ]
 
+export interface NivelSostenibilidad {
+    nombre: string
+    color: string
+    descripcion?: string
+}
+
 export type SegmentoTipo =
     | 'micro_bodega'
     | 'pequena_bodega'
@@ -207,5 +213,58 @@ export function calculateComparison(
         diferenciaPuntos: currentScore - previousScore,
         diferenciaPorcentaje: Math.round(currentPercentage - previousPercentage),
         mejora: currentPercentage > previousPercentage,
+    }
+}
+
+/**
+ * Normaliza el nombre del segmento a la clave usada en RANGOS_POR_SEGMENTO
+ */
+export function getSegmentKeyFromName(segmentName: string | undefined): SegmentoTipo | 'micro_bodega' {
+    if (!segmentName) return 'micro_bodega'
+
+    const lowerName = segmentName.toLowerCase()
+
+    if (lowerName.includes('micro') || lowerName.includes('artesanal')) return 'micro_bodega'
+    if (lowerName.includes('pequeña') || lowerName.includes('pequena')) return 'pequena_bodega'
+    if (lowerName.includes('mediana')) return 'mediana_bodega'
+    if (lowerName.includes('gran')) return 'gran_bodega'
+    // 'Bodega Turística' es la opción por defecto si contiene 'bodega' pero ninguna de las anteriores
+    if (lowerName.includes('bodega')) return 'bodega'
+
+    return 'micro_bodega' // Fallback
+}
+
+/**
+ * Determina el nivel de sostenibilidad basado en el puntaje Y el segmento
+ * Utiliza los rangos definidos en la tabla de referencia
+ */
+export function determineLevelByScoreAndSegment(score: number, segmentName: string | undefined): NivelSostenibilidad {
+    const segmentKey = getSegmentKeyFromName(segmentName)
+    const rangos = RANGOS_POR_SEGMENTO[segmentKey]
+
+    if (score >= rangos.alto.min) {
+        return {
+            nombre: 'Nivel Alto de Sostenibilidad',
+            color: '#15803D', // green-700
+            descripcion: 'Cumple con los estándares más exigentes de sostenibilidad.'
+        }
+    }
+
+    if (score >= rangos.medio.min) {
+        return {
+            nombre: 'Nivel Medio de Sostenibilidad',
+            color: '#22C55E', // green-500
+            descripcion: 'Buen desempeño con oportunidades de mejora para alcanzar la excelencia.'
+        }
+    }
+
+    // Por defecto o si es menor al mínimo (aunque técnicamente el rango empieza en X)
+    // Si es menor al mínimo del rango "minimo", igual lo consideramos nivel mínimo o "insuficiente"?
+    // Basado en la tabla, el nivel mínimo va de X a Y. Asumimos que todo lo debajo de Y (hasta 0) cae en esta categoría o inferior.
+    // Para simplificar y seguir la UI requerida (solo 3 niveles), usaremos Nivel Mínimo.
+    return {
+        nombre: 'Nivel Mínimo de Sostenibilidad',
+        color: '#EAB308', // yellow-500
+        descripcion: 'Cumple con los requisitos básicos, se recomienda implementar mejoras.'
     }
 }

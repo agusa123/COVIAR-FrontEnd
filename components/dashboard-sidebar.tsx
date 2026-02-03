@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, ClipboardList, History, Settings, LogOut, User, BarChart3 } from "lucide-react"
+import { Home, ClipboardList, History, LogOut, User, BarChart3 } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -46,7 +46,7 @@ const navigation = [
   { name: "Resultados", href: "/dashboard/resultados", icon: BarChart3 },
 ]
 
-const bottomNavigation = [{ name: "Configuración", href: "/dashboard/configuracion", icon: Settings }]
+const bottomNavigation: { name: string; href: string; icon: any }[] = []
 
 export function DashboardSidebar() {
   const pathname = usePathname()

@@ -17,7 +17,9 @@ import {
   completarAutoevaluacion,
   cancelarAutoevaluacion
 } from "@/lib/api/autoevaluacion"
-import type { CapituloEstructura, IndicadorEstructura, Segmento } from "@/lib/api/types"
+import type { CapituloEstructura, IndicadorEstructura, Segmento, ResultadoDetallado } from "@/lib/api/types"
+import { calculateChapterScores } from "@/lib/utils/scoring"
+import { saveResultToLocalHistory } from "@/lib/utils/storage-utils"
 import {
   Dialog,
   DialogContent,
@@ -365,9 +367,16 @@ export default function AutoevaluacionPage() {
   const handleFinalizeAssessment = async () => {
     if (!assessmentId) return
     setIsFinalizing(true)
+
+    // Intentar llamar a la API, pero no bloquear si falla
     try {
       await completarAutoevaluacion(assessmentId)
+    } catch (apiError) {
+      console.warn('La API falló al finalizar, procediendo con guardado local:', apiError)
+      // Continuamos flujo para guardar localmente
+    }
 
+    try {
       // Calcular el puntaje total locamente
       const totalScore = Object.values(responses).reduce((acc, puntos) => acc + puntos, 0)
       const maxScore = estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).reduce((sum, ind) => {
@@ -376,7 +385,40 @@ export default function AutoevaluacionPage() {
       }, 0), 0)
       const porcentaje = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0
 
-      // Guardar en localStorage para la página de resultados
+      // Transformar respuestas para que usen solo el ID del indicador como key (requerido por scoring utils)
+      const responsesForScoring: Record<number, number> = {}
+      Object.entries(responses).forEach(([key, points]) => {
+        // key formato: "capId-indId"
+        const parts = key.split('-')
+        if (parts.length === 2) {
+          const indId = parseInt(parts[1])
+          if (!isNaN(indId)) {
+            responsesForScoring[indId] = points
+          }
+        }
+      })
+
+      // Construir objeto de resultado completo para historial
+      const resultadoCompleto: ResultadoDetallado = {
+        autoevaluacion: {
+          id_autoevaluacion: parseInt(assessmentId),
+          fecha_inicio: new Date().toISOString(), // Usamos fecha actual como referencia
+          estado: 'completada',
+          id_bodega: idBodega || 0,
+          id_segmento: selectedSegment?.id_segmento || null,
+          nombre_segmento: selectedSegment?.nombre, // Guardamos el nombre para determinar nivel
+          puntaje_final: totalScore,
+          puntaje_maximo: maxScore,
+          porcentaje: porcentaje,
+          id_nivel_sostenibilidad: null // Se podría calcular si fuera necesario
+        },
+        capitulos: calculateChapterScores(responsesForScoring, estructura)
+      }
+
+      // Guardar usando la utilidad centralizada
+      saveResultToLocalHistory(resultadoCompleto)
+
+      // Mantener compatibilidad con otras vistas que puedan usar este formato específico anterior (opcional)
       const resultData = {
         assessmentId,
         puntaje_final: totalScore,
@@ -478,7 +520,7 @@ export default function AutoevaluacionPage() {
     <div className="flex h-full flex-col">
       <div className="flex-1 p-8 space-y-6">
         {!isSelectingSegment && estructura.length > 0 && (
-          <div className="bg-muted border border-border p-4 rounded-lg shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="bg-muted border border-[#880D1E] p-4 rounded-lg shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 w-full md:w-auto">
               <div className="flex items-center gap-3 justify-between sm:justify-start w-full sm:w-auto">
                 <div className="flex-1 sm:flex-initial">
@@ -487,35 +529,33 @@ export default function AutoevaluacionPage() {
                     {selectedSegment?.nombre.split(' ')[0] || "General"}
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={handleOpenSegmentSelector} className="text-muted-foreground hover:text-foreground h-8 w-8 shrink-0" title="Cambiar Segmento">
-                  <Settings className="h-4 w-4" />
-                </Button>
+
               </div>
 
-              <div className="flex gap-6 sm:border-l sm:border-border sm:pl-6 justify-between sm:justify-start overflow-x-auto pb-2 sm:pb-0">
-                 <div className="whitespace-nowrap">
-                    <div className="text-xs text-muted-foreground uppercase font-semibold">Indicadores</div>
-                    <div className="font-bold text-lg leading-tight text-foreground">
-                      {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).length, 0)}
-                    </div>
-                 </div>
-                 
-                 <div className="whitespace-nowrap border-l border-border pl-6">
-                   <div className="text-xs text-muted-foreground uppercase font-semibold">Máx Puntos</div>
-                   <div className="font-bold text-lg leading-tight text-foreground">
-                     {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).reduce((sum, ind) => {
-                       const maxPuntos = Math.max(...ind.niveles_respuesta.map(n => n.puntos))
-                       return sum + (isFinite(maxPuntos) ? maxPuntos : 0)
-                     }, 0), 0)}
-                   </div>
-                 </div>
+              <div className="flex gap-6 sm:border-l sm:border-border sm:pl-6 justify-between sm:justify-start overflow-x-auto pb-2 sm:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                <div className="whitespace-nowrap">
+                  <div className="text-xs text-muted-foreground uppercase font-semibold">Indicadores</div>
+                  <div className="font-bold text-lg leading-tight text-foreground">
+                    {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).length, 0)}
+                  </div>
+                </div>
 
-                 <div className="whitespace-nowrap border-l border-border pl-6">
-                   <div className="text-xs text-muted-foreground uppercase font-semibold">Tu Puntaje</div>
-                   <div className="font-bold text-lg leading-tight bg-gradient-to-r from-coviar-borravino to-coviar-red bg-clip-text text-transparent">
-                     {Object.values(responses).reduce((acc, puntos) => acc + puntos, 0)}
-                   </div>
-                 </div>
+                <div className="whitespace-nowrap border-l border-border pl-6">
+                  <div className="text-xs text-muted-foreground uppercase font-semibold">Máx Puntos</div>
+                  <div className="font-bold text-lg leading-tight text-foreground">
+                    {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).reduce((sum, ind) => {
+                      const maxPuntos = Math.max(...ind.niveles_respuesta.map(n => n.puntos))
+                      return sum + (isFinite(maxPuntos) ? maxPuntos : 0)
+                    }, 0), 0)}
+                  </div>
+                </div>
+
+                <div className="whitespace-nowrap border-l border-border pl-6">
+                  <div className="text-xs text-muted-foreground uppercase font-semibold">Tu Puntaje</div>
+                  <div className="font-bold text-lg leading-tight bg-gradient-to-r from-coviar-borravino to-coviar-red bg-clip-text text-transparent">
+                    {Object.values(responses).reduce((acc, puntos) => acc + puntos, 0)}
+                  </div>
+                </div>
               </div>
             </div>
 

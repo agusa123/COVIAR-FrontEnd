@@ -10,6 +10,7 @@ import { obtenerHistorialAutoevaluaciones, obtenerResultadosAutoevaluacion } fro
 import type { AutoevaluacionHistorial, ResultadoDetallado } from "@/lib/api/types"
 import { EvaluationCard } from "@/components/historial/evaluation-card"
 import { exportHistorialToCSV, exportHistorialToPDF } from "@/lib/utils/export-utils"
+import { getLocalHistory } from "@/lib/utils/storage-utils"
 import { NivelesSostenibilidadTable } from "@/components/results/niveles-sostenibilidad-table"
 
 export default function HistorialPage() {
@@ -26,27 +27,23 @@ export default function HistorialPage() {
         // ==========================================
         // 1. INTENTAR CARGAR DE LOCALSTORAGE (PRIORIDAD)
         // ==========================================
-        const historialLocalStr = localStorage.getItem('historial_local')
-        if (historialLocalStr) {
-          try {
-            const historialLocal: ResultadoDetallado[] = JSON.parse(historialLocalStr)
-            if (historialLocal.length > 0) {
-              const assessmentsList = historialLocal.map(h => h.autoevaluacion)
-              setAssessments(assessmentsList)
+        // ==========================================
+        // 1. INTENTAR CARGAR DE LOCALSTORAGE (PRIORIDAD)
+        // ==========================================
+        const historialLocal = getLocalHistory()
+        if (historialLocal.length > 0) {
+          const assessmentsList = historialLocal.map(h => h.autoevaluacion)
+          setAssessments(assessmentsList)
 
-              // Pre-cargar cache con los resultados completos locales
-              const newCache: Record<number, ResultadoDetallado> = {}
-              historialLocal.forEach(h => {
-                newCache[h.autoevaluacion.id_autoevaluacion] = h
-              })
-              setResultadosCache(newCache)
+          // Pre-cargar cache con los resultados completos locales
+          const newCache: Record<number, ResultadoDetallado> = {}
+          historialLocal.forEach(h => {
+            newCache[h.autoevaluacion.id_autoevaluacion] = h
+          })
+          setResultadosCache(newCache)
 
-              setIsLoading(false)
-              return
-            }
-          } catch (e) {
-            console.error('Error al parsear historial local:', e)
-          }
+          setIsLoading(false)
+          return
         }
 
         // ==========================================
