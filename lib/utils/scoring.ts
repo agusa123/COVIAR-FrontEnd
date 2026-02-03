@@ -11,15 +11,162 @@ export interface RespuestasMap {
 }
 
 /**
- * Niveles de sostenibilidad basados en porcentaje
+ * Tipos de segmentos disponibles
+ */
+export type SegmentoTipo =
+    | 'micro_bodega'      // Micro Bodega Turística/Artesanal
+    | 'pequena_bodega'    // Pequeña Bodega Turística
+    | 'mediana_bodega'    // Mediana Bodega Turística
+    | 'bodega'            // Bodega Turística
+    | 'gran_bodega'       // Gran Bodega Turística
+
+/**
+ * Niveles de sostenibilidad genéricos (sin segmento específico)
+ * Usa colores: Amarillo = Mínimo, Verde claro = Medio, Verde oscuro = Alto
  */
 export const NIVELES_SOSTENIBILIDAD = [
-    { min: 0, max: 25, nombre: 'Inicial', color: '#ef4444', descripcion: 'Recién comenzando el camino de sostenibilidad' },
-    { min: 25, max: 50, nombre: 'En Desarrollo', color: '#f97316', descripcion: 'Avanzando con oportunidades de mejora' },
-    { min: 50, max: 75, nombre: 'Consolidado', color: '#eab308', descripcion: 'Prácticas sostenibles establecidas' },
-    { min: 75, max: 90, nombre: 'Avanzado', color: '#22c55e', descripcion: 'Alto nivel de sostenibilidad' },
-    { min: 90, max: 100, nombre: 'Ejemplar', color: '#10b981', descripcion: 'Referente en sostenibilidad enoturística' },
+    {
+        id: 'minimo',
+        nombre: 'Nivel mínimo de sostenibilidad',
+        color: '#EAB308', // Amarillo
+        descripcion: 'Cumple con los requisitos mínimos de sostenibilidad enoturística'
+    },
+    {
+        id: 'medio',
+        nombre: 'Nivel medio de sostenibilidad',
+        color: '#22C55E', // Verde claro
+        descripcion: 'Demuestra un compromiso sólido con la sostenibilidad'
+    },
+    {
+        id: 'alto',
+        nombre: 'Nivel alto de sostenibilidad',
+        color: '#15803D', // Verde oscuro
+        descripcion: 'Referente en prácticas de sostenibilidad enoturística'
+    },
 ]
+
+/**
+ * Tabla de rangos de puntaje por segmento
+ * Basado en la guía oficial de niveles de sostenibilidad
+ */
+export const RANGOS_POR_SEGMENTO: Record<SegmentoTipo, {
+    nombre: string
+    minimo: { min: number; max: number }
+    medio: { min: number; max: number }
+    alto: { min: number; max: number }
+}> = {
+    micro_bodega: {
+        nombre: 'Micro Bodega Turística/Artesanal',
+        minimo: { min: 17, max: 38 },
+        medio: { min: 39, max: 45 },
+        alto: { min: 46, max: 51 }
+    },
+    pequena_bodega: {
+        nombre: 'Pequeña Bodega Turística',
+        minimo: { min: 23, max: 51 },
+        medio: { min: 52, max: 61 },
+        alto: { min: 62, max: 69 }
+    },
+    mediana_bodega: {
+        nombre: 'Mediana Bodega Turística',
+        minimo: { min: 32, max: 71 },
+        medio: { min: 72, max: 85 },
+        alto: { min: 86, max: 96 }
+    },
+    bodega: {
+        nombre: 'Bodega Turística',
+        minimo: { min: 42, max: 93 },
+        medio: { min: 94, max: 112 },
+        alto: { min: 113, max: 126 }
+    },
+    gran_bodega: {
+        nombre: 'Gran Bodega Turística',
+        minimo: { min: 42, max: 93 },
+        medio: { min: 94, max: 112 },
+        alto: { min: 113, max: 126 }
+    }
+}
+
+/**
+ * Obtiene el tipo de segmento basado en el nombre o ID
+ */
+export function getSegmentoTipo(segmentoNombre: string): SegmentoTipo {
+    const nombre = segmentoNombre.toLowerCase()
+
+    if (nombre.includes('micro') || nombre.includes('artesanal')) {
+        return 'micro_bodega'
+    }
+    if (nombre.includes('pequeña') || nombre.includes('pequena')) {
+        return 'pequena_bodega'
+    }
+    if (nombre.includes('mediana')) {
+        return 'mediana_bodega'
+    }
+    if (nombre.includes('gran')) {
+        return 'gran_bodega'
+    }
+    // Default: Bodega Turística
+    return 'bodega'
+}
+
+/**
+ * Determina el nivel de sostenibilidad basado en el puntaje y el segmento
+ */
+export function determineSustainabilityLevelBySegment(
+    puntaje: number,
+    segmentoNombre: string
+): typeof NIVELES_SOSTENIBILIDAD[0] {
+    const segmentoTipo = getSegmentoTipo(segmentoNombre)
+    const rangos = RANGOS_POR_SEGMENTO[segmentoTipo]
+
+    if (puntaje >= rangos.alto.min) {
+        return NIVELES_SOSTENIBILIDAD[2] // Alto
+    }
+    if (puntaje >= rangos.medio.min) {
+        return NIVELES_SOSTENIBILIDAD[1] // Medio
+    }
+    if (puntaje >= rangos.minimo.min) {
+        return NIVELES_SOSTENIBILIDAD[0] // Mínimo
+    }
+
+    // Por debajo del mínimo - retorna mínimo pero puede indicarse como "sin nivel"
+    return NIVELES_SOSTENIBILIDAD[0]
+}
+
+/**
+ * Determina el nivel de sostenibilidad basado en porcentaje (fallback genérico)
+ * Usado cuando no se tiene información del segmento
+ */
+export function determineSustainabilityLevel(porcentaje: number): typeof NIVELES_SOSTENIBILIDAD[0] {
+    // Rangos por porcentaje: 0-40% = mínimo, 40-70% = medio, 70%+ = alto
+    if (porcentaje >= 70) {
+        return NIVELES_SOSTENIBILIDAD[2] // Alto
+    }
+    if (porcentaje >= 40) {
+        return NIVELES_SOSTENIBILIDAD[1] // Medio
+    }
+    return NIVELES_SOSTENIBILIDAD[0] // Mínimo
+}
+
+/**
+ * Obtiene información completa del nivel incluyendo rangos del segmento
+ */
+export function getNivelConRangos(
+    puntaje: number,
+    segmentoNombre: string
+): {
+    nivel: typeof NIVELES_SOSTENIBILIDAD[0]
+    rangos: typeof RANGOS_POR_SEGMENTO[SegmentoTipo]
+    segmentoTipo: SegmentoTipo
+    cumpleMinimo: boolean
+} {
+    const segmentoTipo = getSegmentoTipo(segmentoNombre)
+    const rangos = RANGOS_POR_SEGMENTO[segmentoTipo]
+    const nivel = determineSustainabilityLevelBySegment(puntaje, segmentoNombre)
+    const cumpleMinimo = puntaje >= rangos.minimo.min
+
+    return { nivel, rangos, segmentoTipo, cumpleMinimo }
+}
 
 /**
  * Calcula el puntaje máximo posible de toda la estructura
@@ -137,19 +284,6 @@ export function calculateChaptersProgress(
             ? Math.round((capitulosCompletados / estructura.length) * 100)
             : 0,
     }
-}
-
-/**
- * Determina el nivel de sostenibilidad basado en el porcentaje
- */
-export function determineSustainabilityLevel(porcentaje: number): typeof NIVELES_SOSTENIBILIDAD[0] {
-    for (const nivel of NIVELES_SOSTENIBILIDAD) {
-        if (porcentaje >= nivel.min && porcentaje < nivel.max) {
-            return nivel
-        }
-    }
-    // Si es 100%, retornar el último nivel
-    return NIVELES_SOSTENIBILIDAD[NIVELES_SOSTENIBILIDAD.length - 1]
 }
 
 /**

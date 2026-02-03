@@ -1,23 +1,22 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { ChevronRight, Check, Ban, AlertCircle, Users, Settings, CheckCircle2, Clock } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { ChevronRight, CheckCircle2, AlertCircle, Settings, Users, Clock } from "lucide-react"
 import {
   crearAutoevaluacion,
   obtenerEstructuraAutoevaluacion,
-  obtenerSegmentos,
-  seleccionarSegmento,
   guardarRespuestas,
   completarAutoevaluacion,
-  cancelarAutoevaluacion
+  cancelarAutoevaluacion,
+  obtenerSegmentos,
+  seleccionarSegmento
 } from "@/lib/api/autoevaluacion"
-import type { CapituloEstructura, IndicadorEstructura, Segmento } from "@/lib/api/types"
+import type { CapituloEstructura, IndicadorEstructura, Segmento, ResultadoDetallado, AutoevaluacionHistorial, ResultadoCapitulo } from "@/lib/api/types"
 import {
   Dialog,
   DialogContent,
@@ -26,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { determineSustainabilityLevel, getSegmentoTipo } from "@/lib/utils/scoring"
 
 export default function AutoevaluacionPage() {
   const router = useRouter()
@@ -185,10 +185,6 @@ export default function AutoevaluacionPage() {
             uniqueResponses.set(r.id_indicador, r.id_nivel_respuesta)
           })
 
-          if (savedResponses.length !== uniqueResponses.size) {
-            console.warn(`⚠️ API devolvió ${savedResponses.length} respuestas pero solo ${uniqueResponses.size} son únicas`)
-          }
-
           // Buscar el nivel de puntos para cada respuesta guardada
           estructuraResponse.capitulos.forEach(cap => {
             cap.indicadores.forEach(ind => {
@@ -299,22 +295,8 @@ export default function AutoevaluacionPage() {
       id_nivel_respuesta: idNivelRespuesta
     }))
 
-    // Verificar que no haya duplicados (seguridad adicional)
-    const indicadoresIds = respuestasArray.map(r => r.id_indicador)
-    const hasDuplicates = indicadoresIds.length !== new Set(indicadoresIds).size
-    if (hasDuplicates) {
-      console.error('⚠️ ERROR: Respuestas duplicadas detectadas:', indicadoresIds)
-      // No debería pasar nunca con un objeto, pero por seguridad
-      return
-    }
-
-    console.log('=== GUARDANDO RESPUESTAS ===')
-    console.log('Total a enviar:', respuestasArray.length)
-    console.log('Respuestas:', respuestasArray)
-
     try {
       await guardarRespuestas(assessmentId, respuestasArray)
-      console.log(`✅ Guardadas ${respuestasArray.length} respuestas exitosamente`)
     } catch (error) {
       console.error('❌ Error al guardar respuestas:', error)
     }
@@ -363,29 +345,93 @@ export default function AutoevaluacionPage() {
   }
 
   const handleFinalizeAssessment = async () => {
-    if (!assessmentId) return
+    if (!assessmentId || !idBodega) return
     setIsFinalizing(true)
     try {
+      // Intentar llamar a API backend para cerrar (puede que no devuelva resultados aun)
       await completarAutoevaluacion(assessmentId)
 
-      // Calcular el puntaje total locamente
-      const totalScore = Object.values(responses).reduce((acc, puntos) => acc + puntos, 0)
-      const maxScore = estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).reduce((sum, ind) => {
-        const maxPuntos = Math.max(...ind.niveles_respuesta.map(n => n.puntos))
-        return sum + (isFinite(maxPuntos) ? maxPuntos : 0)
-      }, 0), 0)
-      const porcentaje = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0
+      // ==========================================
+      // CALCULAR RESULTADOS LOCALMENTE PARA DEMO
+      // ==========================================
 
-      // Guardar en localStorage para la página de resultados
-      const resultData = {
-        assessmentId,
-        puntaje_final: totalScore,
-        puntaje_maximo: maxScore,
-        porcentaje,
-        fecha_completo: new Date().toISOString(),
-        segmento: selectedSegment?.nombre || 'N/A'
+      const capitulosResultado: ResultadoCapitulo[] = estructura.map(cap => {
+        const indicadoresHabilitados = cap.indicadores.filter(i => i.habilitado)
+        const totalIndicadores = indicadoresHabilitados.length
+
+        let puntajeObtenido = 0
+        let puntajeMaximo = 0
+        let completados = 0
+
+        indicadoresHabilitados.forEach(ind => {
+          // Puntos obtenidos
+          const key = `${cap.capitulo.id_capitulo}-${ind.indicador.id_indicador}`
+          const puntos = responses[key] || 0
+          if (responses[key] !== undefined) completados++
+          puntajeObtenido += puntos
+
+          // Puntos maximos posibles
+          const maxPuntos = Math.max(...ind.niveles_respuesta.map(n => n.puntos))
+          if (isFinite(maxPuntos)) puntajeMaximo += maxPuntos
+        })
+
+        const porcentajeCap = puntajeMaximo > 0 ? Math.round((puntajeObtenido / puntajeMaximo) * 100) : 0
+
+        return {
+          id_capitulo: cap.capitulo.id_capitulo,
+          nombre: cap.capitulo.nombre,
+          puntaje_obtenido: puntajeObtenido,
+          puntaje_maximo: puntajeMaximo,
+          porcentaje: porcentajeCap,
+          indicadores_completados: completados,
+          indicadores_total: totalIndicadores
+        }
+      })
+
+      const puntajeFinalTotal = capitulosResultado.reduce((acc, c) => acc + c.puntaje_obtenido, 0)
+      const puntajeMaximoTotal = capitulosResultado.reduce((acc, c) => acc + c.puntaje_maximo, 0)
+      const porcentajeTotal = puntajeMaximoTotal > 0 ? parseFloat(((puntajeFinalTotal / puntajeMaximoTotal) * 100).toFixed(1)) : 0
+
+      // Determinar nivel de sostenibilidad
+      const segmentoTipo = selectedSegment ? getSegmentoTipo(selectedSegment.nombre) : 'bodega'
+      const nivelInfo = determineSustainabilityLevel(porcentajeTotal, segmentoTipo, puntajeFinalTotal)
+
+      // Construir objeto de historial completo
+      const autoevaluacionHistorial: AutoevaluacionHistorial = {
+        id_autoevaluacion: parseInt(assessmentId),
+        fecha_inicio: pendingInfo?.fechaInicio || new Date().toISOString(), // Usar fecha real si existe
+        fecha_finalizacion: new Date().toISOString(),
+        estado: 'completada',
+        id_bodega: idBodega,
+        id_segmento: selectedSegment?.id_segmento || null,
+        puntaje_final: puntajeFinalTotal,
+        puntaje_maximo: puntajeMaximoTotal,
+        porcentaje: porcentajeTotal,
+        id_nivel_sostenibilidad: nivelInfo?.id || 0,
+        nivel_sostenibilidad: nivelInfo ? {
+          id: nivelInfo.id || 0,
+          nombre: nivelInfo.nombre,
+          descripcion: nivelInfo.descripcion
+        } : undefined
       }
-      localStorage.setItem(`resultado_${assessmentId}`, JSON.stringify(resultData))
+
+      const resultadoCompleto: ResultadoDetallado = {
+        autoevaluacion: autoevaluacionHistorial,
+        capitulos: capitulosResultado
+      }
+
+      // Guardar en array de historial local
+      const historialLocalStr = localStorage.getItem('historial_local')
+      let historialLocal: ResultadoDetallado[] = historialLocalStr ? JSON.parse(historialLocalStr) : []
+
+      // Añadir al inicio
+      historialLocal = [resultadoCompleto, ...historialLocal]
+
+      // Limitar a ultimos 50 por seguridad de espacio
+      if (historialLocal.length > 50) historialLocal = historialLocal.slice(0, 50)
+
+      localStorage.setItem('historial_local', JSON.stringify(historialLocal))
+      console.log('✅ Resultado guardado localmente:', resultadoCompleto)
 
       setShowSuccessDialog(true)
     } catch (error) {
@@ -443,7 +489,7 @@ export default function AutoevaluacionPage() {
       <div className="flex items-center justify-center h-full p-8">
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="text-muted-foreground">Cargando estructura de autoevaluación...</p>
+          <p className="text-muted-foreground">Cargando autoevaluación...</p>
         </div>
       </div>
     )
@@ -493,29 +539,29 @@ export default function AutoevaluacionPage() {
               </div>
 
               <div className="flex gap-6 sm:border-l sm:border-border sm:pl-6 justify-between sm:justify-start overflow-x-auto pb-2 sm:pb-0">
-                 <div className="whitespace-nowrap">
-                    <div className="text-xs text-muted-foreground uppercase font-semibold">Indicadores</div>
-                    <div className="font-bold text-lg leading-tight text-foreground">
-                      {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).length, 0)}
-                    </div>
-                 </div>
-                 
-                 <div className="whitespace-nowrap border-l border-border pl-6">
-                   <div className="text-xs text-muted-foreground uppercase font-semibold">Máx Puntos</div>
-                   <div className="font-bold text-lg leading-tight text-foreground">
-                     {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).reduce((sum, ind) => {
-                       const maxPuntos = Math.max(...ind.niveles_respuesta.map(n => n.puntos))
-                       return sum + (isFinite(maxPuntos) ? maxPuntos : 0)
-                     }, 0), 0)}
-                   </div>
-                 </div>
+                <div className="whitespace-nowrap">
+                  <div className="text-xs text-muted-foreground uppercase font-semibold">Indicadores</div>
+                  <div className="font-bold text-lg leading-tight text-foreground">
+                    {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).length, 0)}
+                  </div>
+                </div>
 
-                 <div className="whitespace-nowrap border-l border-border pl-6">
-                   <div className="text-xs text-muted-foreground uppercase font-semibold">Tu Puntaje</div>
-                   <div className="font-bold text-lg leading-tight bg-gradient-to-r from-coviar-borravino to-coviar-red bg-clip-text text-transparent">
-                     {Object.values(responses).reduce((acc, puntos) => acc + puntos, 0)}
-                   </div>
-                 </div>
+                <div className="whitespace-nowrap border-l border-border pl-6">
+                  <div className="text-xs text-muted-foreground uppercase font-semibold">Máx Puntos</div>
+                  <div className="font-bold text-lg leading-tight text-foreground">
+                    {estructura.reduce((acc, cap) => acc + cap.indicadores.filter(i => i.habilitado).reduce((sum, ind) => {
+                      const maxPuntos = Math.max(...ind.niveles_respuesta.map(n => n.puntos))
+                      return sum + (isFinite(maxPuntos) ? maxPuntos : 0)
+                    }, 0), 0)}
+                  </div>
+                </div>
+
+                <div className="whitespace-nowrap border-l border-border pl-6">
+                  <div className="text-xs text-muted-foreground uppercase font-semibold">Tu Puntaje</div>
+                  <div className="font-bold text-lg leading-tight bg-gradient-to-r from-coviar-borravino to-coviar-red bg-clip-text text-transparent">
+                    {Object.values(responses).reduce((acc, puntos) => acc + puntos, 0)}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -680,10 +726,9 @@ export default function AutoevaluacionPage() {
         )}
       </div>
 
-      {/* Diálogo de Autoevaluación Pendiente */}
+      {/* Diálogo de Autoevaluación Pendiente / Éxito */}
       <Dialog open={showPendingDialog} onOpenChange={setShowPendingDialog}>
         <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
-          {/* Header con gradiente */}
           <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-5 text-white">
             <div className="flex items-center justify-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
@@ -696,12 +741,9 @@ export default function AutoevaluacionPage() {
               </div>
             </div>
           </div>
-
-          {/* Contenido */}
           <div className="px-6 py-5 space-y-4">
             {pendingInfo && (
               <div className="space-y-3">
-                {/* Fecha de inicio */}
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
                     <span className="text-lg">📅</span>
@@ -710,82 +752,34 @@ export default function AutoevaluacionPage() {
                     <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Fecha de inicio</p>
                     <p className="text-sm font-semibold text-gray-800">
                       {new Date(pendingInfo.fechaInicio).toLocaleDateString('es-AR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
+                        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
                       })}
                     </p>
                   </div>
                 </div>
-
-                {/* Estado del segmento/respuestas */}
-                <div className={`flex items-center gap-3 p-3 rounded-lg border ${!pendingInfo.tieneSegmento
-                  ? 'bg-amber-50 border-amber-200'
-                  : pendingInfo.cantidadRespuestas === 0
-                    ? 'bg-blue-50 border-blue-200'
-                    : 'bg-green-50 border-green-200'
-                  }`}>
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${!pendingInfo.tieneSegmento
-                    ? 'bg-amber-100'
-                    : pendingInfo.cantidadRespuestas === 0
-                      ? 'bg-blue-100'
-                      : 'bg-green-100'
-                    }`}>
-                    <span className="text-lg">
-                      {!pendingInfo.tieneSegmento ? '⚠️' : pendingInfo.cantidadRespuestas === 0 ? '📊' : '📝'}
-                    </span>
+                <div className={`flex items-center gap-3 p-3 rounded-lg border ${!pendingInfo.tieneSegmento ? 'bg-amber-50 border-amber-200' : pendingInfo.cantidadRespuestas === 0 ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200'}`}>
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${!pendingInfo.tieneSegmento ? 'bg-amber-100' : pendingInfo.cantidadRespuestas === 0 ? 'bg-blue-100' : 'bg-green-100'}`}>
+                    <span className="text-lg">{!pendingInfo.tieneSegmento ? '⚠️' : pendingInfo.cantidadRespuestas === 0 ? '📊' : '📝'}</span>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Estado</p>
-                    <p className={`text-sm font-semibold ${!pendingInfo.tieneSegmento
-                      ? 'text-amber-700'
-                      : pendingInfo.cantidadRespuestas === 0
-                        ? 'text-blue-700'
-                        : 'text-green-700'
-                      }`}>
-                      {!pendingInfo.tieneSegmento
-                        ? 'Sin segmento seleccionado'
-                        : pendingInfo.cantidadRespuestas === 0
-                          ? 'Segmento seleccionado - Sin respuestas'
-                          : `${pendingInfo.cantidadRespuestas} respuestas guardadas`
-                      }
+                    <p className={`text-sm font-semibold ${!pendingInfo.tieneSegmento ? 'text-amber-700' : pendingInfo.cantidadRespuestas === 0 ? 'text-blue-700' : 'text-green-700'}`}>
+                      {!pendingInfo.tieneSegmento ? 'Sin segmento seleccionado' : pendingInfo.cantidadRespuestas === 0 ? 'Segmento seleccionado - Sin respuestas' : `${pendingInfo.cantidadRespuestas} respuestas guardadas`}
                     </p>
                   </div>
                 </div>
               </div>
             )}
-
-            {/* Mensaje informativo */}
             <p className="text-center text-sm text-gray-600 py-2">
-              {!pendingInfo?.tieneSegmento
-                ? "Para continuar, debes seleccionar un segmento."
-                : pendingInfo.cantidadRespuestas > 0
-                  ? "Tienes respuestas guardadas que se cargarán automáticamente."
-                  : "Puedes continuar respondiendo el cuestionario."
-              }
+              {!pendingInfo?.tieneSegmento ? "Para continuar, debes seleccionar un segmento." : pendingInfo && pendingInfo.cantidadRespuestas > 0 ? "Tienes respuestas guardadas que se cargarán automáticamente." : "Puedes continuar respondiendo el cuestionario."}
             </p>
           </div>
-
-          {/* Footer con botones */}
           <div className="px-6 py-4 bg-gray-50 border-t flex flex-col sm:flex-row gap-3 justify-center">
-            <Button
-              variant="outline"
-              onClick={handleCancelPending}
-              className="order-2 sm:order-1 border-gray-300 bg-white hover:bg-gray-100 text-gray-700 hover:text-gray-900"
-            >
-              {pendingInfo?.cantidadRespuestas && pendingInfo.cantidadRespuestas > 0
-                ? "Cancelar y Perder Respuestas"
-                : "Cancelar y Crear Nueva"}
+            <Button variant="outline" onClick={handleCancelPending} className="order-2 sm:order-1 border-gray-300 bg-white hover:bg-gray-100 text-gray-700 hover:text-gray-900">
+              {pendingInfo?.cantidadRespuestas && pendingInfo.cantidadRespuestas > 0 ? "Cancelar y Perder Respuestas" : "Cancelar y Crear Nueva"}
             </Button>
-            <Button
-              onClick={handleContinuePending}
-              className="order-1 sm:order-2 bg-coviar-borravino hover:bg-coviar-borravino-dark text-white font-medium"
-            >
-              {!pendingInfo?.tieneSegmento
-                ? "Seleccionar Segmento"
-                : "Continuar Autoevaluación"}
+            <Button onClick={handleContinuePending} className="order-1 sm:order-2 bg-coviar-borravino hover:bg-coviar-borravino-dark text-white font-medium">
+              {!pendingInfo?.tieneSegmento ? "Seleccionar Segmento" : "Continuar Autoevaluación"}
             </Button>
           </div>
         </DialogContent>
@@ -800,13 +794,13 @@ export default function AutoevaluacionPage() {
             <DialogTitle className="text-center text-xl">¡Autoevaluación completada!</DialogTitle>
             <DialogDescription className="text-center pt-2">
               Has finalizado exitosamente el proceso de autoevaluación.
-              Tus respuestas han sido guardadas correctamente.
+              Tus respuestas han sido guardadas.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="sm:justify-center pt-4">
             <Button
               className="bg-coviar-borravino hover:bg-coviar-borravino-dark min-w-[150px]"
-              onClick={() => router.push(`/dashboard/resultados/${assessmentId}`)}
+              onClick={() => router.push('/dashboard/resultados')}
             >
               Ver Resultados
             </Button>

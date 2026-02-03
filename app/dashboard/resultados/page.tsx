@@ -7,14 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, BarChart3, Target, Award, History } from "lucide-react"
+import { TrendingUp, TrendingDown, Minus, BarChart3, Target, Award, History, Plus, ClipboardList } from "lucide-react"
 import { obtenerHistorialAutoevaluaciones, obtenerResultadosAutoevaluacion } from "@/lib/api/autoevaluacion"
 import type { AutoevaluacionHistorial, ResultadoDetallado } from "@/lib/api/types"
 import { determineSustainabilityLevel, calculateComparison } from "@/lib/utils/scoring"
-import { ScoreRadarChart } from "@/components/charts/score-radar-chart"
+import { DotPlotChart } from "@/components/charts/dot-plot-chart"
 import { ProgressBarChart } from "@/components/charts/progress-bar-chart"
 import { TrendLineChart } from "@/components/charts/trend-line-chart"
 import { ChapterProgressCard } from "@/components/results/chapter-progress-card"
+import { NivelesSostenibilidadTable } from "@/components/results/niveles-sostenibilidad-table"
 
 export default function ResultadosPage() {
     const router = useRouter()
@@ -26,7 +27,31 @@ export default function ResultadosPage() {
     useEffect(() => {
         async function cargarResultados() {
             try {
+                // ==========================================
+                // 1. INTENTAR CARGAR DE LOCALSTORAGE (PRIORIDAD)
+                // ==========================================
+                const historialLocalStr = localStorage.getItem('historial_local')
+                if (historialLocalStr) {
+                    try {
+                        const historialLocal: ResultadoDetallado[] = JSON.parse(historialLocalStr)
+                        if (historialLocal.length > 0) {
+                            // Local storage tiene datos recientes
+                            const latest = historialLocal[0]
+                            setUltimaEvaluacion(latest)
+                            setHistorial(historialLocal.map(h => h.autoevaluacion))
+                            setIsLoading(false)
+                            return
+                        }
+                    } catch (e) {
+                        console.error('Error al parsear historial local:', e)
+                    }
+                }
+
+                // ==========================================
+                // 2. INTENTAR CARGAR DE API (FALLBACK)
+                // ==========================================
                 const usuarioStr = localStorage.getItem('usuario')
+
                 if (!usuarioStr) {
                     setError('No hay usuario autenticado')
                     setIsLoading(false)
@@ -37,27 +62,41 @@ export default function ResultadosPage() {
                 const idBodega = usuario.bodega?.id
 
                 if (!idBodega) {
-                    setError('No se encontró información de la bodega')
+                    // Si no hay idBodega, no podemos consultar API, pero ya intentamos local
+                    // Si llegamos aquí es porque no hay datos locales ni bodega
                     setIsLoading(false)
                     return
                 }
 
-                // Cargar historial
-                const historialData = await obtenerHistorialAutoevaluaciones(idBodega)
-                setHistorial(historialData)
+                try {
+                    // Cargar historial desde el backend
+                    const historialData = await obtenerHistorialAutoevaluaciones(idBodega)
+                    if (historialData && historialData.length > 0) {
+                        setHistorial(historialData)
 
-                // Buscar la última evaluación completada
-                const completadas = historialData.filter(a => a.estado === 'completada')
-                if (completadas.length > 0) {
-                    const ultima = completadas.sort((a, b) =>
-                        new Date(b.fecha_inicio).getTime() - new Date(a.fecha_inicio).getTime()
-                    )[0]
+                        // Buscar la última evaluación completada
+                        const completadas = historialData.filter(a => a.estado === 'completada')
+                        if (completadas.length > 0) {
+                            const ultima = completadas.sort((a, b) =>
+                                new Date(b.fecha_inicio).getTime() - new Date(a.fecha_inicio).getTime()
+                            )[0]
 
-                    const resultados = await obtenerResultadosAutoevaluacion(ultima.id_autoevaluacion)
-                    setUltimaEvaluacion(resultados)
+                            try {
+                                const resultados = await obtenerResultadosAutoevaluacion(ultima.id_autoevaluacion)
+                                setUltimaEvaluacion(resultados)
+                            } catch (err) {
+                                console.warn('Error al obtener detalle de última evaluación API:', err)
+                            }
+                        }
+                    }
+                } catch (apiErr) {
+                    console.warn('Error al obtener historial API:', apiErr)
+                    // No seteamos error fatal si falla API, solo logueamos, por si el usuario está offline
+                    // o endpoints no existen
                 }
+
             } catch (err) {
-                console.error('Error al cargar resultados:', err)
+                console.error('Error general al cargar resultados:', err)
                 setError(err instanceof Error ? err.message : 'Error al cargar los resultados')
             } finally {
                 setIsLoading(false)
@@ -88,40 +127,52 @@ export default function ResultadosPage() {
         )
     }
 
-    const completadas = historial.filter(a => a.estado === 'completada')
+    // Combinar historial completado (API + Local ya está setead en setHistorial/setUltimaEvaluacion acorde a prioridad)
+    // Nota: en la lógica de arriba, si hay local, reemplaza todo API. Si queremos mezclar sería más complejo,
+    // pero el usuario pidió "hardcodeados a los resultados obtenidos" lo que implica lo local reciente.
 
-    if (completadas.length === 0) {
+    // Si no hay última evaluación, mostrar bienvenida
+    if (!ultimaEvaluacion) {
         return (
             <div className="p-8 space-y-8">
                 <div>
                     <h1 className="text-3xl font-bold">Resultados</h1>
-                    <p className="text-muted-foreground">Análisis y estadísticas de tus evaluaciones</p>
+                    <p className="text-muted-foreground">Análisis de tu última evaluación de sostenibilidad</p>
                 </div>
 
-                <Card className="text-center py-12">
+                <Card className="text-center py-16">
                     <CardContent>
-                        <BarChart3 className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
-                        <h3 className="text-xl font-semibold mb-2">Sin evaluaciones completadas</h3>
-                        <p className="text-muted-foreground mb-6">
-                            Completa tu primera autoevaluación para ver tus resultados aquí
+                        <ClipboardList className="h-20 w-20 text-[#880D1E]/30 mx-auto mb-6" />
+                        <h2 className="text-2xl font-bold mb-3">¡Bienvenido/a!</h2>
+                        <p className="text-muted-foreground text-lg mb-8 max-w-md mx-auto">
+                            Realiza tu primera autoevaluación para ver tus resultados de sostenibilidad aquí.
                         </p>
-                        <Button asChild className="bg-[#880D1E] hover:bg-[#6a0a17]">
+                        <Button
+                            asChild
+                            size="lg"
+                            className="bg-[#880D1E] hover:bg-[#6a0a17] gap-2"
+                        >
                             <Link href="/dashboard/autoevaluacion">
-                                Comenzar Autoevaluación
+                                <Plus className="h-5 w-5" />
+                                Realizar Primera Autoevaluación
                             </Link>
                         </Button>
                     </CardContent>
                 </Card>
+
+                {/* Tabla de Niveles de Sostenibilidad - como referencia */}
+                <NivelesSostenibilidadTable />
             </div>
         )
     }
 
-    const ultima = ultimaEvaluacion?.autoevaluacion
+    const ultima = ultimaEvaluacion.autoevaluacion
     const nivel = ultima?.porcentaje !== null && ultima?.porcentaje !== undefined
         ? determineSustainabilityLevel(ultima.porcentaje)
         : null
 
     // Calcular comparación si hay más de una evaluación
+    const completadas = historial.filter(a => a.estado === 'completada')
     let comparacion = null
     if (completadas.length >= 2 && ultima) {
         const anterior = completadas.sort((a, b) =>
@@ -144,11 +195,11 @@ export default function ResultadosPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold">Resultados</h1>
-                    <p className="text-muted-foreground">Análisis y estadísticas de tus evaluaciones de sostenibilidad</p>
+                    <p className="text-muted-foreground">Tu última evaluación de sostenibilidad enoturística</p>
                 </div>
                 <Button variant="outline" onClick={() => router.push('/dashboard/historial')}>
                     <History className="h-4 w-4 mr-2" />
-                    Ver Historial
+                    Ver Historial Completo
                 </Button>
             </div>
 
@@ -230,7 +281,7 @@ export default function ResultadosPage() {
             {/* Gráficos */}
             <Tabs defaultValue="radar" className="space-y-6">
                 <TabsList>
-                    <TabsTrigger value="radar">Vista Radar</TabsTrigger>
+                    <TabsTrigger value="radar">Vista de Puntos</TabsTrigger>
                     <TabsTrigger value="barras">Vista Barras</TabsTrigger>
                     <TabsTrigger value="tendencia">Tendencia Histórica</TabsTrigger>
                 </TabsList>
@@ -242,8 +293,8 @@ export default function ResultadosPage() {
                             <CardDescription>Vista comparativa de todas las dimensiones evaluadas</CardDescription>
                         </CardHeader>
                         <CardContent>
-                            {ultimaEvaluacion?.capitulos && (
-                                <ScoreRadarChart data={ultimaEvaluacion.capitulos} />
+                            {ultimaEvaluacion.capitulos && (
+                                <DotPlotChart data={ultimaEvaluacion.capitulos} />
                             )}
                         </CardContent>
                     </Card>
@@ -256,7 +307,7 @@ export default function ResultadosPage() {
                             <CardDescription>Porcentaje de cumplimiento en cada dimensión</CardDescription>
                         </CardHeader>
                         <CardContent>
-                            {ultimaEvaluacion?.capitulos && (
+                            {ultimaEvaluacion.capitulos && (
                                 <ProgressBarChart data={ultimaEvaluacion.capitulos} />
                             )}
                         </CardContent>
@@ -280,11 +331,23 @@ export default function ResultadosPage() {
             <div>
                 <h2 className="text-xl font-bold mb-4">Detalle por Capítulo</h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {ultimaEvaluacion?.capitulos?.map(capitulo => (
+                    {ultimaEvaluacion.capitulos?.map(capitulo => (
                         <ChapterProgressCard key={capitulo.id_capitulo} capitulo={capitulo} />
                     ))}
                 </div>
             </div>
+
+            {/* Tabla de Niveles de Sostenibilidad */}
+            <NivelesSostenibilidadTable
+                puntajeActual={ultima?.puntaje_final ?? undefined}
+                segmentoActual={
+                    // Intentar mapear id_segmento(number) a segmentoTipo(string) 
+                    // Como no tenemos el mapa exacto, lo omitimos o asumimos algo
+                    // La table usara 'micro_bodega' por defecto si no le pasamos nada, o no resaltará ninguno si es undefined
+                    // Podemos dejarlo undefined o implementar un mapeo simple si tenemos los IDs
+                    undefined
+                }
+            />
         </div>
     )
 }
