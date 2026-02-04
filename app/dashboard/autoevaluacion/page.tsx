@@ -621,9 +621,9 @@ export default function AutoevaluacionPage() {
                         >
                           <RadioGroupItem value={nivel.puntos.toString()} id={`ind-${indicadorWrapper.indicador.id_indicador}-lvl-${nivel.id_nivel_respuesta}`} className="mt-1" />
                           <Label htmlFor={`ind-${indicadorWrapper.indicador.id_indicador}-lvl-${nivel.id_nivel_respuesta}`} className="font-normal cursor-pointer w-full">
-                            <div className="font-medium text-foreground">{nivel.nombre}</div>
+                            <span className="font-medium text-foreground whitespace-nowrap mr-2">{nivel.nombre}</span>
                             {nivel.descripcion && (
-                              <div className="text-sm text-muted-foreground mt-1 text-pretty">{nivel.descripcion}</div>
+                              <span className="text-sm text-muted-foreground text-pretty">{nivel.descripcion}</span>
                             )}
                           </Label>
                         </div>
@@ -642,6 +642,14 @@ export default function AutoevaluacionPage() {
                 className="w-full sm:w-auto"
               >
                 Anterior Capítulo
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => router.push('/')}
+                className="w-full sm:w-auto border-primary text-primary hover:bg-primary hover:text-white"
+              >
+                Guardar y Salir
               </Button>
 
               {estructura.findIndex(c => c.capitulo.id_capitulo === currentCapitulo.capitulo.id_capitulo) === estructura.length - 1 ? (

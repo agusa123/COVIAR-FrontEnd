@@ -157,6 +157,20 @@ export default function RegistroPage() {
       return
     }
 
+    // Validar formato INV (1 letra y 5 números) si hay valor
+    const invRegex = /^[a-zA-Z]\d{5}$/
+    if (invBod && !invRegex.test(invBod)) {
+      setError("El N° Bodega INV debe tener 1 letra y 5 números (ej: A12345)")
+      setIsLoading(false)
+      return
+    }
+
+    if (invVin && !invRegex.test(invVin)) {
+      setError("El N° de Viñedo INV debe tener 1 letra y 5 números (ej: B67890)")
+      setIsLoading(false)
+      return
+    }
+
     try {
       // Construir el objeto de registro según el formato de la API
       const registroData = {
@@ -301,8 +315,13 @@ export default function RegistroPage() {
                   id="cuit"
                   required
                   value={cuit}
-                  onChange={(e) => setCuit(e.target.value)}
-                  placeholder="XX-XXXXXXXX-X"
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^0-9]/g, "").slice(0, 11)
+                    setCuit(value)
+                  }}
+                  placeholder="Ingrese los 11 números sin guiones"
+                  maxLength={11}
+                  inputMode="numeric"
                 />
               </div>
 
