@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -46,6 +46,8 @@ export default function AutoevaluacionPage() {
   const [responsesForApi, setResponsesForApi] = useState<Record<number, number>>({}) // key: id_indicador, value: id_nivel_respuesta (para API)
   const [canFinalize, setCanFinalize] = useState(false)
   const [isFinalizing, setIsFinalizing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false) // Para rastrear si hay guardados pendientes
+  const savingCount = useRef(0) // Contador de guardados en curso
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [showPendingDialog, setShowPendingDialog] = useState(false)
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
@@ -328,11 +330,18 @@ export default function AutoevaluacionPage() {
     console.log('Total a enviar:', respuestasArray.length)
     console.log('Respuestas:', respuestasArray)
 
+    savingCount.current++
+    setIsSaving(true)
     try {
       await guardarRespuestas(assessmentId, respuestasArray)
       console.log(`✅ Guardadas ${respuestasArray.length} respuestas exitosamente`)
     } catch (error) {
       console.error('❌ Error al guardar respuestas:', error)
+    } finally {
+      savingCount.current--
+      if (savingCount.current === 0) {
+        setIsSaving(false)
+      }
     }
   }
 
@@ -443,10 +452,12 @@ export default function AutoevaluacionPage() {
       }
       localStorage.setItem(`resultado_${assessmentId}`, JSON.stringify(resultData))
 
-      setShowSuccessDialog(true)
+      // Redirigir a la página de resultados
+      router.push(`/dashboard/resultados/${assessmentId}`)
     } catch (error) {
       console.error('Error al finalizar:', error)
       alert(error instanceof Error ? error.message : 'Error al finalizar la autoevaluación')
+      setIsFinalizing(false)
     } finally {
       setIsFinalizing(false)
     }
@@ -686,10 +697,10 @@ export default function AutoevaluacionPage() {
               {estructura.findIndex(c => c.capitulo.id_capitulo === currentCapitulo.capitulo.id_capitulo) === estructura.length - 1 ? (
                 <Button
                   onClick={handleFinalizeAssessment}
-                  disabled={!canFinalize || isFinalizing}
+                  disabled={!canFinalize || isFinalizing || isSaving}
                   className="bg-coviar-borravino hover:bg-coviar-borravino-dark text-white w-full sm:w-auto"
                 >
-                  {isFinalizing ? "Finalizando..." : "Finalizar Autoevaluación"}
+                  {isSaving ? "Guardando..." : isFinalizing ? "Finalizando..." : "Finalizar Autoevaluación"}
                 </Button>
               ) : (
                 <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
