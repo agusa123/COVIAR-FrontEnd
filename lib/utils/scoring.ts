@@ -1,6 +1,6 @@
 // lib/utils/scoring.ts
 
-import type { CapituloEstructura, ResultadoCapitulo } from '@/lib/api/types'
+import type { CapituloEstructura, ResultadoCapitulo, ResultadoCapituloConIndicadores, IndicadorConRespuesta } from '@/lib/api/types'
 
 /**
  * Interfaz para respuestas del usuario
@@ -167,6 +167,65 @@ export function calculateChapterScores(
             porcentaje: puntajeMaximo > 0 ? Math.round((puntajeObtenido / puntajeMaximo) * 100) : 0,
             indicadores_completados: indicadoresCompletados,
             indicadores_total: indicadoresHabilitados.length,
+        }
+    })
+}
+
+/**
+ * Calcula puntajes por capítulo INCLUYENDO indicadores con sus respuestas
+ * Esta versión extendida incluye el detalle de cada indicador y la respuesta seleccionada
+ */
+export function calculateChapterScoresWithResponses(
+    responses: RespuestasMap,
+    estructura: CapituloEstructura[]
+): ResultadoCapituloConIndicadores[] {
+    return estructura.map(capitulo => {
+        const indicadoresHabilitados = capitulo.indicadores.filter(ind => ind.habilitado !== false)
+
+        let puntajeObtenido = 0
+        let indicadoresCompletados = 0
+
+        const indicadoresConRespuesta: IndicadorConRespuesta[] = indicadoresHabilitados.map(indicador => {
+            const maxPuntos = Math.max(...indicador.niveles_respuesta.map(n => n.puntos), 0)
+            const puntosSeleccionados = responses[indicador.indicador.id_indicador]
+            
+            // Buscar el nivel de respuesta seleccionado
+            let respuestaSeleccionada = null
+            if (puntosSeleccionados !== undefined) {
+                const nivelSeleccionado = indicador.niveles_respuesta.find(n => n.puntos === puntosSeleccionados)
+                if (nivelSeleccionado) {
+                    respuestaSeleccionada = {
+                        id_nivel_respuesta: nivelSeleccionado.id_nivel_respuesta,
+                        nombre: nivelSeleccionado.nombre,
+                        descripcion: nivelSeleccionado.descripcion || '',
+                        puntos: nivelSeleccionado.puntos
+                    }
+                }
+                puntajeObtenido += puntosSeleccionados
+                indicadoresCompletados++
+            }
+
+            return {
+                id_indicador: indicador.indicador.id_indicador,
+                nombre: indicador.indicador.nombre,
+                descripcion: indicador.indicador.descripcion || '',
+                orden: indicador.indicador.orden,
+                respuesta: respuestaSeleccionada,
+                puntaje_maximo: isFinite(maxPuntos) ? maxPuntos : 0
+            }
+        })
+
+        const puntajeMaximo = indicadoresConRespuesta.reduce((sum, ind) => sum + ind.puntaje_maximo, 0)
+
+        return {
+            id_capitulo: capitulo.capitulo.id_capitulo,
+            nombre: capitulo.capitulo.nombre,
+            puntaje_obtenido: puntajeObtenido,
+            puntaje_maximo: puntajeMaximo,
+            porcentaje: puntajeMaximo > 0 ? Math.round((puntajeObtenido / puntajeMaximo) * 100) : 0,
+            indicadores_completados: indicadoresCompletados,
+            indicadores_total: indicadoresHabilitados.length,
+            indicadores: indicadoresConRespuesta
         }
     })
 }

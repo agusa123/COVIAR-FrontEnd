@@ -18,7 +18,7 @@ import {
   cancelarAutoevaluacion
 } from "@/lib/api/autoevaluacion"
 import type { CapituloEstructura, IndicadorEstructura, Segmento, ResultadoDetallado } from "@/lib/api/types"
-import { calculateChapterScores, determineLevelByScoreAndSegment } from "@/lib/utils/scoring"
+import { calculateChapterScores, calculateChapterScoresWithResponses, determineLevelByScoreAndSegment } from "@/lib/utils/scoring"
 import { saveResultToLocalHistory } from "@/lib/utils/storage-utils"
 import {
   Dialog,
@@ -483,9 +483,10 @@ export default function AutoevaluacionPage() {
       const nivelCalculado = determineLevelByScoreAndSegment(totalScore, selectedSegment?.nombre)
 
       // Guardar como último resultado completado para la vista principal de resultados
+      // Usamos calculateChapterScoresWithResponses para incluir los indicadores y respuestas detalladas
       const ultimoResultado = {
         ...resultData,
-        capitulos: calculateChapterScores(responsesForScoring, estructura),
+        capitulos: calculateChapterScoresWithResponses(responsesForScoring, estructura),
         nivel_sostenibilidad: nivelCalculado.nombre
       }
       localStorage.setItem('ultimo_resultado_completado', JSON.stringify(ultimoResultado))

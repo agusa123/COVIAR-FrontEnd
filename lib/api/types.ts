@@ -167,6 +167,26 @@ export interface ResultadoCapitulo {
   indicadores_total: number
 }
 
+// Indicador con respuesta seleccionada para resultados detallados
+export interface IndicadorConRespuesta {
+  id_indicador: number
+  nombre: string
+  descripcion: string
+  orden: number
+  respuesta: {
+    id_nivel_respuesta: number
+    nombre: string
+    descripcion: string
+    puntos: number
+  } | null
+  puntaje_maximo: number
+}
+
+// Capítulo con indicadores y respuestas para resultados detallados
+export interface ResultadoCapituloConIndicadores extends ResultadoCapitulo {
+  indicadores: IndicadorConRespuesta[]
+}
+
 export interface ResultadoDetallado {
   autoevaluacion: AutoevaluacionHistorial
   capitulos: ResultadoCapitulo[]

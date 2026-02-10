@@ -18,11 +18,13 @@ import {
     ClipboardList,
     Plus,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    AlertCircle
 } from "lucide-react"
 import { NivelesSostenibilidadTable } from "@/components/results/niveles-sostenibilidad-table"
 import { getNivelSostenibilidadInfo } from "@/lib/utils/scoring"
 import type { SegmentoTipo } from "@/lib/utils/scoring"
+import type { CapituloResultado } from "@/lib/api/types"
 
 // Colores institucionales COVIAR
 const COLORS = {
@@ -190,8 +192,22 @@ function ChapterCard({ capitulo }: { capitulo: CapituloResultado }) {
     )
 }
 
-// Tipo para capítulo local guardado (simplificado)
-interface CapituloLocalSimple {
+// Tipo para capítulo local guardado con indicadores (extendido)
+interface IndicadorLocal {
+    id_indicador: number
+    nombre: string
+    descripcion: string
+    orden: number
+    respuesta: {
+        id_nivel_respuesta: number
+        nombre: string
+        descripcion: string
+        puntos: number
+    } | null
+    puntaje_maximo: number
+}
+
+interface CapituloLocalConIndicadores {
     id_capitulo: number
     nombre: string
     puntaje_obtenido: number
@@ -199,19 +215,25 @@ interface CapituloLocalSimple {
     porcentaje: number
     indicadores_completados: number
     indicadores_total: number
+    indicadores?: IndicadorLocal[]
 }
 
-// Componente de tarjeta de capítulo para datos locales
-function LocalChapterCard({ capitulo }: { capitulo: CapituloLocalSimple }) {
+// Componente de tarjeta de capítulo para datos locales - EXPANDIBLE
+function LocalChapterCard({ capitulo }: { capitulo: CapituloLocalConIndicadores }) {
+    const [isExpanded, setIsExpanded] = useState(false)
     const color = getChapterColor(capitulo.nombre)
     const icon = getChapterIcon(capitulo.nombre)
+    const hasIndicadores = capitulo.indicadores && capitulo.indicadores.length > 0
 
     return (
         <Card
             className="overflow-hidden transition-all duration-300 hover:shadow-lg border-l-4"
             style={{ borderLeftColor: color }}
         >
-            <CardHeader>
+            <CardHeader
+                className={hasIndicadores ? "cursor-pointer select-none" : ""}
+                onClick={() => hasIndicadores && setIsExpanded(!isExpanded)}
+            >
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div
@@ -243,9 +265,78 @@ function LocalChapterCard({ capitulo }: { capitulo: CapituloLocalSimple }) {
                         >
                             {capitulo.porcentaje}%
                         </div>
+                        {hasIndicadores && (
+                            isExpanded ? (
+                                <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            )
+                        )}
                     </div>
                 </div>
             </CardHeader>
+
+            {isExpanded && hasIndicadores && (
+                <CardContent className="pt-0">
+                    <Separator className="mb-4" />
+                    <div className="space-y-4">
+                        {capitulo.indicadores!.map((indicador, idx) => (
+                            <div
+                                key={indicador.id_indicador || idx}
+                                className="p-4 rounded-lg bg-muted/30 border border-border/50"
+                            >
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1">
+                                        <h4 className="font-medium text-foreground">
+                                            {indicador.nombre}
+                                        </h4>
+                                        {indicador.descripcion && (
+                                            <p className="text-sm text-muted-foreground mt-1">
+                                                {indicador.descripcion}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <Badge
+                                        variant="outline"
+                                        className="shrink-0 font-semibold"
+                                        style={{
+                                            borderColor: color,
+                                            color: color
+                                        }}
+                                    >
+                                        {indicador.respuesta?.puntos ?? 0} / {indicador.puntaje_maximo} pts
+                                    </Badge>
+                                </div>
+                                {indicador.respuesta && (
+                                    <div className="mt-3 p-3 rounded-md bg-background border">
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <CheckCircle2
+                                                className="h-4 w-4 shrink-0"
+                                                style={{ color }}
+                                            />
+                                            <span className="font-medium" style={{ color }}>
+                                                {indicador.respuesta.nombre}
+                                            </span>
+                                        </div>
+                                        {indicador.respuesta.descripcion && (
+                                            <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                                {indicador.respuesta.descripcion}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                                {!indicador.respuesta && (
+                                    <div className="mt-3 p-3 rounded-md bg-muted/50 border border-dashed">
+                                        <p className="text-sm text-muted-foreground italic">
+                                            Sin respuesta registrada
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </CardContent>
+            )}
         </Card>
     )
 }
@@ -332,16 +423,8 @@ function ErrorState({ message }: { message: string }) {
     )
 }
 
-// Estructura local del resultado guardado (coincide con calculateChapterScores)
-interface CapituloResultadoLocal {
-    id_capitulo: number
-    nombre: string
-    puntaje_obtenido: number
-    puntaje_maximo: number
-    porcentaje: number
-    indicadores_completados: number
-    indicadores_total: number
-}
+// Estructura local del resultado guardado (coincide con calculateChapterScoresWithResponses)
+// Nota: CapituloLocalConIndicadores ya está definido arriba con soporte para indicadores
 
 interface ResultadoLocal {
     assessmentId: string
@@ -352,7 +435,7 @@ interface ResultadoLocal {
     segmento: string
     nombre_bodega: string
     responsable: string
-    capitulos: CapituloResultadoLocal[]
+    capitulos: CapituloLocalConIndicadores[]
     nivel_sostenibilidad: string
 }
 
